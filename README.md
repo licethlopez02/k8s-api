@@ -1,7 +1,6 @@
-[Documentacion k8s-api.md](https://github.com/user-attachments/files/34300166/Documentacion.k8s-api.md)
 # Documentación Técnica: Arquitectura del Clúster K8s y Decisiones de Diseño
 
-**Proyecto:** Clúster de Kubernetes Resiliente sobre Red Virtual de Tailscale
+**Proyecto:** Clúster de Kubernetes sobre Red Virtual de Tailscale
 
 ## 1. Resumen Ejecutivo y Alcance del Proyecto
 
@@ -39,33 +38,60 @@ Asimismo, documenta la arquitectura interna del servicio backend desarrollado en
 
 ## 3. Arquitectura y Código de la Aplicación (Spring Boot)
 
-La aplicación backend fue construida bajo un enfoque **stateless (sin estado)** utilizando **Spring Boot (Java 17)**. Se prescindió explícitamente de tecnologías de persistencia (como Spring Data JPA, Hibernate o bases de datos relacionales/NoSQL) para garantizar un inicio de contenedor ultra-rápido y una ejecución ligera orientada a microservicios efímeros en Kubernetes.
+La aplicación backend está construida bajo un enfoque **stateless (sin estado)** utilizando **Spring Boot (Java 17)**. Se prescinde explícitamente de tecnologías de persistencia (como Spring Data JPA, Hibernate o bases de datos relacionales/NoSQL) para mantener una ejecución ligera y permitir escalar instancias de forma horizontal en Kubernetes sin coordinar estado entre Pods.
 
-### 3.1. Estructura por Capas Lógicas (Stateless Architecture)
+### 3.1. Estructura por capas lógicas (arquitectura stateless)
 
-Se aplicó una segregación de responsabilidades limpia dividida en tres componentes principales:
+La aplicación separa responsabilidades en las siguientes capas:
 
 1. **Capa de Controladores (`@RestController`):**
-   * Encargada de exponer los endpoints RESTful de la API consumibles vía HTTP (puerto `8080`).
-   * Recibe las peticiones HTTP, mapea las rutas de acceso y retorna directamente los objetos DTO, delegando en Spring Boot la serialización automática a JSON y la respuesta implícita con código de estado HTTP 200 OK.
+   * Expone los endpoints REST de la API vía HTTP en el puerto `8080`.
+   * Recibe las solicitudes, asigna las rutas y delega la lógica en los servicios. Spring serializa los DTO de respuesta a JSON.
 
 2. **Capa de Objetos de Transferencia de Datos (DTOs):**
-   * Clases Java dedicadas exclusivamente a modelar y estructurar el payload JSON que entra y sale de la aplicación.
-   * Evitan la exposición directa de lógica interna y aseguran un contrato de datos estricto y desacoplado entre el cliente y el backend.
+   * Modela y estructura los datos JSON intercambiados con el cliente.
+   * Mantiene un contrato de datos desacoplado de la lógica interna.
 
 3. **Capa de Lógica de Negocio y Servicios (`@Service`):**
-   * Contiene las operaciones y la manipulación de datos en memoria (mediante colecciones nativas de Java como `List`).
-   * Actúa como el motor del servicio sin requerir conexiones externas a bases de datos.
+   * Implementa las operaciones de negocio y prepara los datos de respuesta en memoria.
+   * No requiere conexiones externas a bases de datos.
 
-### 3.2. Justificación de la Ausencia de Persistencia y JPA
+### 3.2. Ausencia de persistencia y JPA
 
 * **Decisión tomada:** Excluir dependencias como `spring-boot-starter-data-jpa`, controladores JDBC o motores de base de datos integrados (H2/PostgreSQL).
-* **Justificación:** En un entorno de Kubernetes enfocado en pruebas de resiliencia y alta disponibilidad, los Pods son considerados recursos desechables y horizontales. Eliminar el estado persistente evita cuellos de botella en la inicialización, reduce el tamaño de la imagen Docker y permite validar la auto-recuperación de Pods de forma pura sin dependencias externas.
+* **Justificación:** Los Pods son recursos reemplazables y escalables. Al no mantener estado persistente en la aplicación, una réplica puede atender solicitudes sin depender de datos locales de otra; esto favorece el escalado horizontal y evita dependencias externas para iniciar el servicio.
 
-### 3.3. Configuraciones Clave del Runtime
+### 3.3. Manejo global de excepciones (v3.0.0)
 
-* **LTS Java 17:** Elegido por sus optimizaciones de memoria en entornos contenedorizados (Cgroups v2 support).
-* **Puerto Predeterminado:** `8080` (configurado en `application.properties` y referenciado en los manifiestos de Kubernetes).
+En la versión **3.0.0** se incorporó el paquete `exception`, que centraliza el tratamiento de excepciones REST:
+
+* `GlobalExceptionHandler` utiliza `@RestControllerAdvice` y maneja excepciones mediante `@ExceptionHandler`.
+* Los errores se devuelven con el DTO `ErrorResponseDTO`, cuyos campos son `timestamp`, `status`, `error`, `message` y `path`.
+* Las excepciones atendidas se responden con HTTP `500 Internal Server Error`. La respuesta estructurada no incluye la traza de pila de la JVM, por lo que esta no se expone al cliente.
+
+| Campo | Descripción |
+| --- | --- |
+| `timestamp` | Fecha y hora en que se construye la respuesta de error. |
+| `status` | Código HTTP numérico (`500`). |
+| `error` | Nombre descriptivo del estado HTTP. |
+| `message` | Mensaje asociado a la excepción. |
+| `path` | Ruta solicitada que produjo el error. |
+
+### 3.4. Evolución de la API y control de versiones en Git
+
+| Versión / rama | Evolución funcional y técnica |
+| --- | --- |
+| **v1.0.0** (`main`) | Consulta de métricas del contenedor: hora, hostname, uso de RAM mediante cgroups y disco. Se estandarizó el nombre del artefacto Maven con `<finalName>k8s-api</finalName>`. |
+| **v2.0.0** (`feature/v2-endpoint`) | Externalización de `app.info.version`, `app.info.integrantes` y `app.info.greeting-message` en `application.yml`. Se añadieron `GET /api/version` y `GET /api/greeting`; este último responde mediante `GreetingDTO`. |
+| **v3.0.0** (`feature/v3-pi-endpoint`) | Se añadió `GET /api/pi`, sin parámetros de entrada, que entrega el valor de `Math.PI` en `PiResponseDTO`; se incorporó también el manejo global de excepciones descrito arriba. |
+
+Los endpoints de las versiones anteriores se conservan en la API actual: `GET /api/info`, `GET /api/version` y `GET /api/greeting`; v3.0.0 agrega `GET /api/pi`. Los parámetros de versión y saludo se configuran actualmente en `application.yml`.
+
+
+### 3.5. Configuraciones clave del runtime
+
+* **Java 17:** versión LTS configurada para el proyecto.
+* **Puerto predeterminado:** `8080`, expuesto por la aplicación y utilizado como `targetPort` en el Service de Kubernetes.
 
 ## 4. Decisiones de Diseño del Servicio en Kubernetes
 
@@ -75,19 +101,25 @@ Se aplicó una segregación de responsabilidades limpia dividida en tres compone
 
 * **Justificación:** Kubernetes no ejecuta archivos de código o binarios sueltos (`.jar`). Delega la descarga y ejecución de contenedores al motor `containerd` de los Workers.
 
-### 4.2. Objeto `Deployment` y Réplicas Generosas
+### 4.2. Objeto `Deployment` y escalabilidad horizontal
 
-* **Decisión tomada:** Configurar un `Deployment` con `replicas: 12`.
+* **Decisión tomada:** Configurar el `Deployment` con `replicas: 5`; el estado deseado es mantener cinco Pods de la aplicación activos.
 
-* **Justificación:** Solicitar un número de réplicas superior al número de nodos activos fuerza al componente `kube-scheduler` a distribuir equitativamente los Pods entre todos los Workers disponibles. El objeto `Deployment` gestiona internamente el `ReplicaSet`, garantizando el monitoreo continuo del estado deseado frente al estado real.
+* **Justificación:** Kubernetes crea y mantiene las réplicas declaradas. El `Deployment` administra un `ReplicaSet`, que supervisa el estado deseado y crea reemplazos si Pods fallan. Las cinco réplicas favorecen la alta disponibilidad y la distribución de carga entre nodos; la cantidad realmente disponible puede variar durante fallos o actualizaciones.
 
-### 4.3. Objeto `Service` Tipo `NodePort`
+### 4.3. Actualizaciones progresivas y reversión
 
-* **Decisión tomada:** Exponer la aplicación mediante un `Service` con `type: NodePort` asociando el puerto expuesto de la aplicación (`targetPort: 8080`) a un puerto estático en los nodos (`nodePort: 30001`).
+La estrategia `RollingUpdate` permite desplegar una nueva imagen de forma progresiva, sustituyendo Pods sin detener simultáneamente todas las réplicas. `kubectl rollout status` permite observar el avance; `kubectl rollout history` consulta revisiones registradas y `kubectl rollout undo` revierte a la revisión anterior. Para seleccionar cualquiera de las versiones v1.0.0, v2.0.0 o v3.0.0, se deben desplegar su imagen etiquetada y su manifiesto correspondiente; el historial de rollout por sí solo no reemplaza el versionado de esos artefactos.
 
-* **Justificación:** El `NodePort` abre la puerta de enlace `30001` en **todos** los nodos del clúster (gracias a `kube-proxy`). Esto permite el acceso desde el exterior (vía IP de Tailscale del Master o de cualquier Worker) sin requerir un balanceador de carga externo.
+```bash
+kubectl rollout status deployment/springboot-api
+kubectl rollout history deployment/springboot-api
+kubectl rollout undo deployment/springboot-api
+```
 
-## 5. Estructura de Manifiestos Aplicados (`api-spring-deployment.yaml`)
+## 5. Manifiestos de referencia
+
+El siguiente manifiesto resume las decisiones de réplica y enrutamiento. El nombre de imagen es ilustrativo; en cada versión debe utilizarse la imagen etiquetada que corresponda.
 
 ```yaml
 apiVersion: apps/v1
@@ -95,7 +127,9 @@ kind: Deployment
 metadata:
   name: springboot-api
 spec:
-  replicas: 12
+  replicas: 5
+  strategy:
+    type: RollingUpdate
   selector:
     matchLabels:
       app: springboot-api
@@ -105,10 +139,10 @@ spec:
         app: springboot-api
     spec:
       containers:
-      - name: api-container
-        image: tu-usuario/api-springboot:v1
-        ports:
-        - containerPort: 8080
+        - name: api-container
+          image: tu-usuario/k8s-api:3.0.0
+          ports:
+            - containerPort: 8080
 ---
 apiVersion: v1
 kind: Service
@@ -126,11 +160,12 @@ spec:
 
 ## 6. Estrategia de Pruebas y Validación de Resiliencia
 
-| Prueba | Acción Ejecutada | Comportamiento del Clúster / Mecanismo de Control | Resultado Esperado | 
-| ----- | ----- | ----- | ----- | 
-| **Distribución de Carga** | Despliegue del YAML en Master | `kube-scheduler` analiza la carga y distribuye las 12 réplicas entre los Workers activos. | Visualización de los Pods repartidos en distintos nodos (`kubectl get pods -o wide`). | 
-| **Recuperación de Pods** | `kubectl delete pod <nombre>` | El **ReplicaSet** detecta la reducción del conteo de pods a 11 y recrea 1 pod inmediatamente para cumplir las 12 réplicas. | Alta disponibilidad garantizada; reemplazo en milisegundos. | 
-| **Tolerancia a Fallos en Nodos** | `sudo poweroff` en un Worker | `Node Controller` marca el nodo como `NotReady`. El `ReplicaSet` reagrupa los Pods perdidos y los recrea en los Workers sobrevivientes. | Cero interrupción del servicio consumido desde el puerto `30001`. | 
+| Prueba | Acción | Mecanismo de control | Resultado esperado |
+| --- | --- | --- | --- |
+| **Distribución de carga** | Desplegar el manifiesto y consultar `kubectl get pods -o wide`. | El scheduler asigna Pods a nodos disponibles; `replicas: 5` expresa el estado deseado. | Hasta cinco Pods disponibles, distribuidos según los recursos y restricciones del clúster. |
+| **Recuperación de Pods** | `kubectl delete pod <nombre>`. | El `ReplicaSet` detecta la réplica faltante y crea un reemplazo. | El Deployment vuelve a buscar cinco Pods disponibles. |
+| **Actualización / reversión** | Actualizar la imagen y utilizar `kubectl rollout`; para revertir, `kubectl rollout undo`. | El Deployment administra el `RollingUpdate` y las revisiones del rollout. | Cambio progresivo o retorno a la revisión anterior disponible. |
+| **Tolerancia a fallos en nodos** | Apagar un Worker de prueba. | El controlador marca el nodo `NotReady`; Kubernetes programa Pods en nodos disponibles según sus recursos y restricciones. | Recuperación de las réplicas posibles y acceso mediante el `NodePort` `30001`, sujeto a la capacidad restante del clúster. |
 
 ## 7. Firma y Trazabilidad de Generación
 
