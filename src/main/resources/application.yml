@@ -3,8 +3,9 @@ spring:
     name: k8s-api
 app:
   info:
-    version: "1.0.0"
+    version: "2.0.0"
     integrantes:
       - "Jhon Cardenas"
       - "Liceth Lopez"
       - "Diego Soto"
+    greeting-message: "Hola, esta es la version:"

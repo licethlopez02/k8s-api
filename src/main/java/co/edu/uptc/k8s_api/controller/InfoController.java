@@ -2,6 +2,7 @@ package co.edu.uptc.k8s_api.controller;
 
 import co.edu.uptc.k8s_api.dto.ContainerInfoDTO;
 import co.edu.uptc.k8s_api.dto.AppVersionDTO;
+import co.edu.uptc.k8s_api.dto.GreetingDTO;
 import co.edu.uptc.k8s_api.service.InfoService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -32,5 +33,10 @@ public class InfoController {
     @GetMapping("/version")
     public AppVersionDTO returnVersion() {
         return infoService.getAppVersion();
+    }
+
+    @GetMapping("/greeting")
+    public GreetingDTO returnGreeting() {
+        return infoService.getGreetingInfo();
     }
 }

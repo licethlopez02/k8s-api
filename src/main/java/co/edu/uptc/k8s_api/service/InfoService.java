@@ -2,6 +2,7 @@ package co.edu.uptc.k8s_api.service;
 
 import co.edu.uptc.k8s_api.dto.ContainerInfoDTO;
 import co.edu.uptc.k8s_api.dto.AppVersionDTO;
+import co.edu.uptc.k8s_api.dto.GreetingDTO;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -17,14 +18,17 @@ public class InfoService {
 
     private final List<String> integrantes;
     private final String version;
+    private final String greetingMessage;
 
     public InfoService(
             @Value("${app.info.integrantes[0]}") String primerIntegrante,
             @Value("${app.info.integrantes[1]}") String segundoIntegrante,
             @Value("${app.info.integrantes[2]}") String tercerIntegrante,
-            @Value("${app.info.version:1.0.0}") String version) {
+            @Value("${app.info.version:1.0.0}") String version,
+            @Value("${app.info.greeting-message}") String greetingMessage) {
         this.integrantes = List.of(primerIntegrante, segundoIntegrante, tercerIntegrante);
         this.version = version;
+        this.greetingMessage = greetingMessage;
     }
 
     public ContainerInfoDTO getContainerInfo() {
@@ -74,5 +78,9 @@ public class InfoService {
 
     public AppVersionDTO getAppVersion() {
         return new AppVersionDTO(version);
+    }
+
+    public GreetingDTO getGreetingInfo() {
+        return new GreetingDTO(greetingMessage + " " + version, version, integrantes);
     }
 }
