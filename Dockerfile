@@ -1,4 +1,9 @@
-FROM eclipse-temurin:17-jdk-alpine
-VOLUME /tmp
-COPY target/k8s-api-0.0.1.jar app.jar
-ENTRYPOINT ["java","-jar","/app.jar"]
+FROM eclipse-temurin:21-jre-alpine
+
+WORKDIR /app
+
+COPY target/k8s-service.jar app.jar
+
+EXPOSE 8080
+
+ENTRYPOINT ["java", "-jar", "app.jar"]
