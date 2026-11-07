@@ -3,6 +3,7 @@ package co.edu.uptc.k8s_api.service;
 import co.edu.uptc.k8s_api.dto.ContainerInfoDTO;
 import co.edu.uptc.k8s_api.dto.AppVersionDTO;
 import co.edu.uptc.k8s_api.dto.GreetingDTO;
+import co.edu.uptc.k8s_api.dto.PiResponseDTO;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -82,5 +83,9 @@ public class InfoService {
 
     public GreetingDTO getGreetingInfo() {
         return new GreetingDTO(greetingMessage + " " + version, version, integrantes);
+    }
+
+    public PiResponseDTO getPiValue() {
+        return new PiResponseDTO(Math.PI, LocalDateTime.now().toString());
     }
 }
