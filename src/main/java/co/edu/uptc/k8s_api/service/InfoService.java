@@ -1,6 +1,8 @@
 package co.edu.uptc.k8s_api.service;
 
 import co.edu.uptc.k8s_api.dto.ContainerInfoDTO;
+import co.edu.uptc.k8s_api.dto.AppVersionDTO;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
@@ -13,17 +15,24 @@ import java.util.List;
 @Service
 public class InfoService {
 
+    private final List<String> integrantes;
+    private final String version;
+
+    public InfoService(
+            @Value("${app.info.integrantes[0]}") String primerIntegrante,
+            @Value("${app.info.integrantes[1]}") String segundoIntegrante,
+            @Value("${app.info.integrantes[2]}") String tercerIntegrante,
+            @Value("${app.info.version:1.0.0}") String version) {
+        this.integrantes = List.of(primerIntegrante, segundoIntegrante, tercerIntegrante);
+        this.version = version;
+    }
+
     public ContainerInfoDTO getContainerInfo() {
         
         // 1. Hora del contenedor
         // Decisión: Se usa LocalDateTime.now(ZoneId.systemDefault()) para capturar la 
         // hora local configurada en el sistema operativo del pod en el momento de la petición.
         String horaContenedor = LocalDateTime.now(ZoneId.systemDefault()).toString();
-
-        // 2. Nombres de los integrantes
-        // Decisión: Se emplea List.of() al ser una colección inmutable, adecuada para 
-        // datos estáticos que no cambian durante la ejecución del microservicio.
-        List<String> integrantes = List.of("Jhon Cardenas", "Liceth Lopez", "Diego Soto");
 
         // 3. Nombre o ID del contenedor
         // Decisión: En Kubernetes, el ID/Nombre del Pod se inyecta por defecto en la 
@@ -61,5 +70,9 @@ public class InfoService {
                 almacenamientoTotal,
                 ramAsignada
         );
+    }
+
+    public AppVersionDTO getAppVersion() {
+        return new AppVersionDTO(version);
     }
 }
